@@ -17,7 +17,7 @@ protected int should_quit = 1;
 protected int repository_state;
 protected int processing_state;
 
-protected string dir;
+protected string dir; // the normalized path of the repository root.
 protected float commit_coalesce_period = 0.75;
 protected int stable_time = 2;
 
@@ -54,6 +54,56 @@ constant processing_states = ([
   PROCESSING_STATE_SENDING: "SENDING",
   PROCESSING_STATE_RECEIVING: "RECEIVING",
 ]);
+
+ADT.Queue commit_queue = ADT.Queue();
+mixed commit_task = 0;
+int commit_running = 0;
+int pull_needed = 0; // if a pull notification arrives when we are committing, this flag will be set, 
+                     // and do_run_commit() should ensure that this happens before returning.
+
+
+/*
+    A subclass of FootLocker for a given storage mechanism must implement these methods
+
+    All methods should call set_processing_state() and set_repository_state() as necessary during
+    the course of processing changes.
+*/
+
+//! Verify that the directory exists, and is a valid repository. It need not add any existing files to
+//! the repository, as each file will be passed to do_add_file() with the avisory flag set during the 
+//! startup scan afterward. 
+//!
+//! If (and only if) the directory is not already a repository, 
+//! it should perform an initial pull of data.
+//!  
+void verify_local_repository();
+
+//! Commit the specified files to the repository.
+//!
+//! This method runs in a background thread in order to prevent the application from blocking 
+//! during long running operations.
+//!
+//! This method should call stop_processing_events() and start_processing_events() as necessary 
+//! During periods where new change processing would cause errors.
+//!
+//! This method should call changes_pushed() after successfully pushing changes to notify other 
+//! installations that changes are available for pulling.
+void do_run_commit(array ents);
+
+//! Update the local directory with changes from a master repository.
+//!
+//! This method runs in a background thread in order to prevent the application from blocking 
+//! during long running operations.
+//!
+//! This method should call stop_processing_events() and start_processing_events() as necessary 
+//! During periods where new change processing would cause errors.
+void do_pull_incoming_changes();
+
+//! Stage a file for addition, and return 1 if a commit is required to effect the change.
+int do_add_file(string path, int|void advisory);
+
+//! Stage a file for deletion, and return 1 if a commit is required to effect the change.
+int do_remove_file(string path);
 
 protected void create(mapping config, object control_delegate) {
   configuration = config;
@@ -161,6 +211,91 @@ void start_watch() {
   set_nonblocking(2);
 }
 
+protected string get_dir(string subdir) {
+  return Stdio.append_path(dir, subdir);
+}
+
+protected string normalize_path(string path) {
+   return path[sizeof(dir)+1..];
+}
+
+void add_new_file(string path, int|void advisory) {
+  string fpath = path;
+//werror("add_new_file(%O, %O)\n", path, advisory);
+  if(path == dir) return;
+  path = normalize_path(path);
+  
+  if(do_add_file(path))
+    need_commit(path);
+}
+
+void save_changed_file(string path, Stdio.Stat st) {
+  if(path == dir) return;
+  string fpath = path;
+  path = normalize_path(path);
+  if(Stdio.is_dir(fpath)) return;
+  
+  need_commit(path);
+}
+
+void remove_file(string path) {
+  if(path == dir) return;
+  path = normalize_path(path);
+  if(do_remove_file(path))
+    need_commit(path);
+}
+
+// add path to list of files to committed and schedule a commit task.
+protected void need_commit(string path) {
+  set_processing_state(PROCESSING_STATE_PENDING);
+  commit_queue->put(path);
+  if(commit_task == 0) {
+    werror("scheduling commit task\n");
+    commit_task = call_out(run_commit, commit_coalesce_period);
+  }
+}
+
+protected void run_commit() {
+  // if a commit was scheduled but the current one is still running, abort and try again shortly.
+  werror("run_commit\n");
+  if(commit_running) { 
+  werror("  was already running. trying again later.\n");
+    remove_call_out(run_commit); 
+    commit_task = call_out(run_commit, 1); 
+    return 0; 
+  }
+  
+  workers->run_async(_do_run_commit);
+}
+
+void _do_run_commit() {
+  commit_running = 1;
+  commit_task = 0;
+  stop_processing_events();
+  ADT.Queue entries = commit_queue;
+  array ents = Array.uniq(values(entries));
+//  werror("commit queue: %O\n", ents);
+  commit_queue = ADT.Queue();
+
+  mixed e = catch(do_run_commit(ents));
+
+  start_processing_events();
+  commit_running = 0;
+
+  // TODO we should have better error handling than this.
+  if(e) throw(e);
+}
+
+void pull_incoming_changes() {
+  if(commit_task != 0 || commit_running == 1) // a commit is either running or will be soon, so we should defer. that way we don't lose local, uncommitted changes
+  {
+     pull_needed = 1;
+	   return;	 
+  }
+	
+	workers->run_async(do_pull_incoming_changes);
+}
+
 protected void run_process_thread()
 {
 //werror("starting run_process_thread()\n");
@@ -174,6 +309,14 @@ protected void run_process_thread()
 //  werror("run_process_thread exiting.\n");
 }
 
+// TODO do we really need to stop processing incoming changes during
+//   commit/push/pull activities, or do we only need to make sure that
+//   commits aren't occurring during certain activitie (like hg update)?
+//   as it is, we are pretty conservative about this, but it could mean
+//   that multiple individual changes to a file could be recorded as fewer,
+//   less atomic changes.
+
+//!
 void start_processing_events(int|void dont_force) {
     if(dont_force &&  do_not_process) return; // if we have asked to not process events, do not override.
     if(thread_running) return; // don't start multiple processing threads.
@@ -182,17 +325,11 @@ void start_processing_events(int|void dont_force) {
     process_thread = Thread.Thread(run_process_thread);
 }
 
+//!
 void stop_processing_events() {
   should_quit = 1;
   do_not_process = 1;
 }
-
-void verify_local_repository();
-
-void add_new_file(string path, int|void advisory);
-void remove_file(string path);
-void save_changed_file(string path, Stdio.Stat st);
-void pull_incoming_changes();
 
 protected void process_entries() {
   int processed_stuff = 0;

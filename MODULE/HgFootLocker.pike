@@ -1,15 +1,14 @@
 inherit .FootLocker;
 
-ADT.Queue commit_queue = ADT.Queue();
-mixed commit_task = 0;
 multiset remote_commands = (<"push", "pull", "incoming", "outgoing">);
-int commit_running = 0;
-int pull_needed = 0;
 
 // TODO
 //  we currently halt processing of local changes when doing push/pull/update. 
 //  we could lose individual changes happening during a long event, and it may
 //  be possible to continue doing commits while pushing/pulling. investigate!
+
+// TODO
+// verify presense of hg and ssh
 
 void verify_local_repository() {
 werror("verifying repository for %s\n", dir);
@@ -53,11 +52,7 @@ werror("verifying repository for %s\n", dir);
 /* we don't actually need to do this, as the watcher will cause a refresh of any added files, 
    which will trigger a pull if there are any incoming changes. */ 
 
-werror("repository successfully verified for %s\n", dir);
-}
-
-string get_dir(string subdir) {
-  return Stdio.append_path(dir, subdir);
+  werror("repository successfully verified for %s\n", dir);
 }
 
 void explain_hg_error(mapping res) {
@@ -77,71 +72,24 @@ mapping run_hg_command(string command, string|void args) {
    return Process.run(cmdstr, (["cwd": dir])) + (["command": cmdstr]);
 }
 
-void add_new_file(string path, int|void advisory) {
-  string fpath = path;
-//werror("add_new_file(%O, %O)\n", path, advisory);
-  if(path == dir) return;
-  path = normalize_path(path);
+int do_add_file(string path, int|void advisory) {
   mapping res = run_hg_command("add", "'" + path + "'");
- // werror("res: %O\n", res->stderr);
+  // werror("res: %O\n", res->stderr);
   // TODO 
-  if(!Stdio.is_dir(fpath) && !has_suffix(res->stderr, " already tracked!\n")) {
+  if(!Stdio.is_dir(Stdio.append_path(dir, path)) && !has_suffix(res->stderr, " already tracked!\n")) {
     werror("new file %O\n", path);
-    need_commit(path);
+    return 1;
+  } else {
+    return 0;
   }
 }
 
-void remove_file(string path) {
-  if(path == dir) return;
-  path = normalize_path(path);
+int do_remove_file(string path) {
   run_hg_command("rm", path);
-  need_commit(path);
+  return 1;
 }
 
-void save_changed_file(string path, Stdio.Stat st) {
-  if(path == dir) return;
-  string fpath = path;
-  path = normalize_path(path);
-  if(Stdio.is_dir(fpath)) return;
-  
-  need_commit(path);
-}
-
-string normalize_path(string path) {
-   return path[sizeof(dir)+1..];
-}
-
-// add path to list of files to committed and schedule a commit task.
-void need_commit(string path) {
-  set_processing_state(PROCESSING_STATE_PENDING);
-  commit_queue->put(path);
-  if(commit_task == 0) {
-    werror("scheduling commit task\n");
-    commit_task = call_out(run_commit, commit_coalesce_period);
-  }
-}
-
-void run_commit() {
-  // if a commit was scheduled but the current one is still running, abort and try again shortly.
-  werror("run_commit\n");
-  if(commit_running) { 
-  werror("  was already running. trying again later.\n");
-    remove_call_out(run_commit); 
-    commit_task = call_out(run_commit, 1); 
-    return 0; 
-  }
-  
-  workers->run_async(do_run_commit);
-}
-
-void do_run_commit() {
-  commit_running = 1;
-  commit_task = 0;
-  stop_processing_events();
-  ADT.Queue entries = commit_queue;
-  array ents = Array.uniq(values(entries));
-//  werror("commit queue: %O\n", ents);
-  commit_queue = ADT.Queue();
+void do_run_commit(array ents) {
   mixed e;
 
   mapping st = run_hg_command("status", "-m -a -r -d -n");
@@ -166,67 +114,11 @@ void do_run_commit() {
 	} else {
     set_processing_state(PROCESSING_STATE_IDLE);
 	}
-	  
-  start_processing_events();
-  commit_running = 0;
+  
   if(e) throw(e);
 }
 
-
-void pull_n_push_changes() {
-  stop_processing_events();
-    set_processing_state(PROCESSING_STATE_RECEIVING);
-  mapping r;
-//  mapping r = run_hg_command("incoming",  configuration->source);
-//  if(r->exitcode == 0) {
-    r = pull_changes();
-    if(r->exitcode != 0) {
-      catch(explain_hg_error(r));
-    }
-    r = update_changes();
-    if(r->exitcode != 0) {
-      catch(explain_hg_error(r));
-      set_repository_state(REPOSITORY_STATE_ERROR);
-    }
-//  } else if(r->exit_code > 1) {
-//     catch(explain_hg_error(r));
-//  } else {
-
-  set_processing_state(PROCESSING_STATE_SENDING);
-  
-  r = push_changes();
-//  }
-  
-  // TODO we need to have better error handling here.
-  start_processing_events();
-    set_processing_state(PROCESSING_STATE_IDLE);
-
-  if(r->exitcode == 0) {
-     add_history(HISTORY_TYPE_INFO, "Sent changes.");
-     changes_pushed();
-  }
-  if(!(<0,1>)[r->exitcode]) // zero is success, one is nothing to push. 
-  {
-    explain_hg_error(r);
-    set_repository_state(REPOSITORY_STATE_ERROR);
-  } else {
-    set_repository_state(REPOSITORY_STATE_CLEAN);
-  }
-}
-
-void pull_incoming_changes() {
-  if(commit_task != 0 || commit_running == 1) // a commit is either running or will be soon, so we should defer. that way we don't lose local, uncommitted changes
-  {
-     pull_needed = 1;
-	 return;	 
-  }
-	
-	workers->run_async(do_pull_incoming_changes);
-}
-
 void do_pull_incoming_changes() {
-	
-  stop_processing_events();
   set_processing_state(PROCESSING_STATE_RECEIVING);
   mapping r;
 
@@ -234,6 +126,9 @@ void do_pull_incoming_changes() {
     if(r->exitcode != 0) {
       catch(explain_hg_error(r));
     }
+
+  stop_processing_events();
+
     r = update_changes();
     if(r->exitcode == 0) {
         set_repository_state(REPOSITORY_STATE_CLEAN);
@@ -250,6 +145,50 @@ void do_pull_incoming_changes() {
   start_processing_events();
 }
 
+void pull_n_push_changes() {
+    set_processing_state(PROCESSING_STATE_RECEIVING);
+  mapping r;
+//  mapping r = run_hg_command("incoming",  configuration->source);
+//  if(r->exitcode == 0) {
+    r = pull_changes();
+    if(r->exitcode != 0) {
+      catch(explain_hg_error(r));
+    }
+
+  stop_processing_events();
+
+    r = update_changes();
+    if(r->exitcode != 0) {
+      catch(explain_hg_error(r));
+      set_repository_state(REPOSITORY_STATE_ERROR);
+    }
+//  } else if(r->exit_code > 1) {
+//     catch(explain_hg_error(r));
+//  } else {
+
+  start_processing_events();
+
+  set_processing_state(PROCESSING_STATE_SENDING);
+  
+  r = push_changes();
+//  }
+  
+  // TODO we need to have better error handling here.
+  set_processing_state(PROCESSING_STATE_IDLE);
+
+  if(r->exitcode == 0) {
+     add_history(HISTORY_TYPE_INFO, "Sent changes.");
+     changes_pushed();
+  }
+  if(!(<0,1>)[r->exitcode]) // zero is success, one is nothing to push. 
+  {
+    explain_hg_error(r);
+    set_repository_state(REPOSITORY_STATE_ERROR);
+  } else {
+    set_repository_state(REPOSITORY_STATE_CLEAN);
+  }
+}
+
 mapping push_changes() {
   mapping res = run_hg_command("push", configuration->source);
   return res;
@@ -260,7 +199,6 @@ mapping update_changes() {
   if(res->exitcode == 1) {
       res = run_hg_command("merge", "-t internal:merge-local");
   }
-
   return res;
 }
 
