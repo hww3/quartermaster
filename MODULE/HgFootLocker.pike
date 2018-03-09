@@ -196,7 +196,7 @@ mapping push_changes() {
 }
 
 mapping update_changes() {
-  mapping res = run_hg_command("update", "--check -t internal:local");
+  mapping res = run_hg_command("update", "--check");
   if(res->exitcode == 1) {
       res = run_hg_command("merge", "-t internal:local");
   }
