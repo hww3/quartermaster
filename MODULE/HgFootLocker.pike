@@ -17,7 +17,12 @@ werror("verifying repository for %s\n", configuration->dir);
       Stdio.recursive_rm(get_dir("/.hg"));
       explain_hg_error(res);
     }
-    res = run_hg_command("pull", configuration->source);
+  } else if(res->exitcode == 0) { // repository present
+  } else {
+    throw(Error.Generic("unable to determine state of footlocker repository: " + res->stderr + "\n"));
+  }
+  
+    res = run_hg_command("pull", "--rebase " + configuration->source);
     if(res->exitcode) {
       // if the pull failed for some reason, return us to a repository-less situation.
       // we may possibly be left with a partial pull, but at least there will be no data loss.
@@ -31,11 +36,7 @@ werror("verifying repository for %s\n", configuration->dir);
       Stdio.recursive_rm(get_dir("/.hg"));
       explain_hg_error(res);
     }
-  } else if(res->exitcode == 0) { // repository present
-    // we don't bother adding 
-  } else {
-    throw(Error.Generic("unable to determine state of footlocker repository: " + res->stderr + "\n"));
-  }
+
 werror("repository successfully verified for %s\n", configuration->dir);
 }
 
@@ -47,7 +48,7 @@ string get_dir(string subdir) {
 
 void explain_hg_error(mapping res) {
   string exp = sprintf("we ran the command %s, and it returned exitcode %d, stdout: %O, stderr: %O\n", 
-                        res->command, res->exitcode, res->stdout, res->Stderr);
+                        res->command, res->exitcode, res->stdout, res->stderr);
   werror(exp);
   throw(Error.Generic(exp));
 }
