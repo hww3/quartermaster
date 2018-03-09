@@ -2,6 +2,9 @@ inherit .FootLocker;
 
 ADT.Queue commit_queue = ADT.Queue();
 mixed commit_task = 0;
+multiset remote_commands = (<"push", "pull", "incoming", "outgoing">);
+int commit_running = 0;
+int pull_needed = 0;
 
 void verify_local_repository() {
 werror("verifying repository for %s\n", dir);
@@ -47,8 +50,6 @@ werror("verifying repository for %s\n", dir);
 
 werror("repository successfully verified for %s\n", dir);
 }
-
-multiset remote_commands = (<"push", "pull", "incoming", "outgoing">);
 
 string get_dir(string subdir) {
   return Stdio.append_path(dir, subdir);
@@ -113,8 +114,6 @@ void need_commit(string path) {
   }
 }
 
-int commit_running = 0;
-
 void run_commit() {
   // if a commit was scheduled but the current one is still running, abort and try again shortly.
   werror("run_commit\n");
@@ -142,9 +141,12 @@ void run_commit() {
     mapping resp = run_hg_command("commit", "-m 'QuarterMaster generated commit from " + gethostname() + ".\n\nFiles modified:\n\n" + 
                       sprintf("%{%s\n%}", ents) + "' " + sprintf("%{'%s' %}", ents));
 //    werror("resp: %O\n", resp);
-    if(resp->exitcode == 0) 
+  if(resp->exitcode == 0) 
       e = catch(pull_n_push_changes());
-  }
+	  } else if (pull_needed) {
+		  pull_needed = 0;
+		  e = catch(pull_n_push_changes());
+	  } 
   commit_running = 0;
   if(e) throw(e);
 }
@@ -181,6 +183,12 @@ void pull_n_push_changes() {
 }
 
 void pull_incoming_changes() {
+  if(commit_task != 0 || commit_running == 1) // a commit is either running or will be soon, so we should defer. that way we don't lose local, uncommitted changes
+  {
+     pull_needed = 1;
+	 return;	 
+  }
+	
   stop_processing_events();
   mapping r;
 //  mapping r = run_hg_command("incoming",  configuration->source);
