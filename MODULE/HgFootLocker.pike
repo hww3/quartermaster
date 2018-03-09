@@ -4,7 +4,7 @@ ADT.Queue commit_queue = ADT.Queue();
 mixed commit_task = 0;
 
 void verify_local_repository() {
-werror("verifying repository for %s\n", configuration->dir);
+werror("verifying repository for %s\n", dir);
   mapping res = run_hg_command("status");
   
   werror("hg status returned status %d, stdout: %O, stderr: %O\n", res->exitcode, res->stdout, res->stderr);
@@ -37,13 +37,13 @@ werror("verifying repository for %s\n", configuration->dir);
       explain_hg_error(res);
     }
 
-werror("repository successfully verified for %s\n", configuration->dir);
+werror("repository successfully verified for %s\n", dir);
 }
 
 multiset remote_commands = (<"push", "pull", "incoming", "outgoing">);
 
 string get_dir(string subdir) {
-  return Stdio.append_path(configuration->dir, subdir);
+  return Stdio.append_path(dir, subdir);
 }
 
 void explain_hg_error(mapping res) {
@@ -59,13 +59,13 @@ mapping run_hg_command(string command, string|void args) {
    if(args)
      cmdstr += (" " + args);
    werror("-> running %s\n", cmdstr);
-   return Process.run(cmdstr, (["cwd": configuration->dir])) + (["command": cmdstr]);
+   return Process.run(cmdstr, (["cwd": dir])) + (["command": cmdstr]);
 }
 
 void add_new_file(string path, int|void advisory) {
   string fpath = path;
 //werror("add_new_file(%O, %O)\n", path, advisory);
-  if(path == configuration->dir) return;
+  if(path == dir) return;
   path = normalize_path(path);
   mapping res = run_hg_command("add", path);
  // werror("res: %O\n", res->stderr);
@@ -77,14 +77,14 @@ void add_new_file(string path, int|void advisory) {
 }
 
 void remove_file(string path) {
-  if(path == configuration->dir) return;
+  if(path == dir) return;
   path = normalize_path(path);
   run_hg_command("rm", path);
   need_commit(path);
 }
 
 void save_changed_file(string path, Stdio.Stat st) {
-  if(path == configuration->dir) return;
+  if(path == dir) return;
   string fpath = path;
   path = normalize_path(path);
   if(Stdio.is_dir(fpath)) return;
@@ -93,7 +93,7 @@ void save_changed_file(string path, Stdio.Stat st) {
 }
 
 string normalize_path(string path) {
-   return path[sizeof(configuration->dir)+1..];
+   return path[sizeof(dir)+1..];
 }
 
 // add path to list of files to committed and schedule a commit task.
