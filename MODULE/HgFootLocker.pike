@@ -6,6 +6,7 @@ multiset remote_commands = (<"push", "pull", "incoming", "outgoing">);
 int commit_running = 0;
 int pull_needed = 0;
 
+
 void verify_local_repository() {
 werror("verifying repository for %s\n", dir);
   mapping res = run_hg_command("status");
@@ -56,9 +57,10 @@ string get_dir(string subdir) {
 }
 
 void explain_hg_error(mapping res) {
-  string exp = sprintf("we ran the command %s, and it returned exitcode %d, stdout: %O, stderr: %O\n", 
+  string exp = sprintf("We ran the command %s, and it returned exitcode %d, stdout: %O, stderr: %O\n", 
                         res->command, res->exitcode, res->stdout, res->stderr);
   werror(exp);
+  add_history(HISTORY_TYPE_ERROR, exp);
   throw(Error.Generic(exp));
 }
 
@@ -107,10 +109,11 @@ string normalize_path(string path) {
 
 // add path to list of files to committed and schedule a commit task.
 void need_commit(string path) {
+  set_processing_state(PROCESSING_STATE_PENDING);
   commit_queue->put(path);
   if(commit_task == 0) {
-  //  werror("scheduling commit task\n");
-    commit_task = call_out(run_commit, 2);
+    werror("scheduling commit task\n");
+    commit_task = call_out(run_commit, commit_coalesce_period);
   }
 }
 
@@ -120,15 +123,20 @@ void run_commit() {
   if(commit_running) { 
   werror("  was already running. trying again later.\n");
     remove_call_out(run_commit); 
-    commit_task = call_out(run_commit, 2); 
+    commit_task = call_out(run_commit, 1); 
     return 0; 
   }
   
+  workers->run_async(do_run_commit);
+}
+
+void do_run_commit() {
   commit_running = 1;
   commit_task = 0;
+  stop_processing_events();
   ADT.Queue entries = commit_queue;
   array ents = Array.uniq(values(entries));
-  werror("commit queue: %O\n", ents);
+//  werror("commit queue: %O\n", ents);
   commit_queue = ADT.Queue();
   mixed e;
 
@@ -136,17 +144,25 @@ void run_commit() {
   array files_affected = (st->stdout/"\n");
   array files_to_ignore = ents - files_affected;
   ents = ents & files_affected;
-  werror("ignoring %O\n", files_to_ignore);
+//  werror("ignoring %O\n", files_to_ignore);
   if(sizeof(ents)) {
+    set_processing_state(PROCESSING_STATE_RECORDING);
+
     mapping resp = run_hg_command("commit", "-m 'QuarterMaster generated commit from " + gethostname() + ".\n\nFiles modified:\n\n" + 
                       sprintf("%{%s\n%}", ents) + "' " + sprintf("%{'%s' %}", ents));
 //    werror("resp: %O\n", resp);
+    add_history(HISTORY_TYPE_INFO, "Recorded changes to "  + sizeof(ents) + " files.\n" + sprintf("%{%s\n%}", ents));
+    
+  set_processing_state(PROCESSING_STATE_IDLE);
+
   if(resp->exitcode == 0) 
       e = catch(pull_n_push_changes());
 	  } else if (pull_needed) {
 		  pull_needed = 0;
 		  e = catch(pull_n_push_changes());
 	  } 
+	  
+  start_processing_events();
   commit_running = 0;
   if(e) throw(e);
 }
@@ -154,6 +170,7 @@ void run_commit() {
 
 void pull_n_push_changes() {
   stop_processing_events();
+    set_processing_state(PROCESSING_STATE_RECEIVING);
   mapping r;
 //  mapping r = run_hg_command("incoming",  configuration->source);
 //  if(r->exitcode == 0) {
@@ -164,22 +181,32 @@ void pull_n_push_changes() {
     r = update_changes();
     if(r->exitcode != 0) {
       catch(explain_hg_error(r));
+      set_repository_state(REPOSITORY_STATE_ERROR);
     }
 //  } else if(r->exit_code > 1) {
 //     catch(explain_hg_error(r));
 //  } else {
+
+  set_processing_state(PROCESSING_STATE_SENDING);
   
   r = push_changes();
 //  }
   
   // TODO we need to have better error handling here.
   start_processing_events();
-  
-  if(r->exitcode == 0) 
+    set_processing_state(PROCESSING_STATE_IDLE);
+
+  if(r->exitcode == 0) {
+     add_history(HISTORY_TYPE_INFO, "Sent changes.");
      changes_pushed();
-     
+  }
   if(!(<0,1>)[r->exitcode]) // zero is success, one is nothing to push. 
+  {
     explain_hg_error(r);
+    set_repository_state(REPOSITORY_STATE_ERROR);
+  } else {
+    set_repository_state(REPOSITORY_STATE_CLEAN);
+  }
 }
 
 void pull_incoming_changes() {
@@ -189,23 +216,32 @@ void pull_incoming_changes() {
 	 return;	 
   }
 	
+	workers->run_async(do_pull_incoming_changes);
+}
+
+void do_pull_incoming_changes() {
+	
   stop_processing_events();
+  set_processing_state(PROCESSING_STATE_RECEIVING);
   mapping r;
-//  mapping r = run_hg_command("incoming",  configuration->source);
-//  if(r->exitcode == 0) {
+
     r = pull_changes();
     if(r->exitcode != 0) {
       catch(explain_hg_error(r));
     }
     r = update_changes();
+    if(r->exitcode == 0) {
+        set_repository_state(REPOSITORY_STATE_CLEAN);
+        // TODO include source and files affected.
+        add_history(HISTORY_TYPE_INFO, "Received incoming changes.");
+    }
     if(r->exitcode != 0) {
+      set_repository_state(REPOSITORY_STATE_ERROR);
       catch(explain_hg_error(r));
     }
-//  } else if(r->exit_code > 1) {
-//     catch(explain_hg_error(r));
-//  }
-  
+
   // TODO we need to have better error handling here.
+  set_processing_state(PROCESSING_STATE_IDLE);
   start_processing_events();
 }
 

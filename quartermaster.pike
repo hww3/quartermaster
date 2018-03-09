@@ -15,6 +15,8 @@ string configfile;
 string logfile;
 mapping prefs;
 
+ControlSocket control_socket;
+
 mapping footlockers = ([]);
 
 protected void create(array(string) args)
@@ -22,7 +24,7 @@ protected void create(array(string) args)
     ::create(args);
  }
 
-int main(int argc, array(string) argv) {
+public int main(int argc, array(string) argv) {
   int daemon_mode=0;
 
   array args=Getopt.find_all_options(argv, ({ 
@@ -93,19 +95,20 @@ int main(int argc, array(string) argv) {
     } 
 
   load_preferences();
+  call_out(configure_control_socket, 1);
   call_out(configure_footlockers, 1);
   return -1;
 }
 
-void display_help() {
+protected void display_help() {
   write("usage: quartermaster [-v|--version] [-h|--help] [-f yyy|--configfile=yyyy] [-d|--daemon] [-lxxxx|-logfile=xxxx]\n");
 }
 
-void display_version() {
+protected void display_version() {
   write("quartermaster version %s\n", QUARTERMASTER_VERSION);
 }
 
-void load_preferences()
+protected void load_preferences()
 {
    string f=Stdio.read_file(configfile);
    if(!f) error("Unable to read config file " + configfile + "\n");
@@ -114,7 +117,15 @@ void load_preferences()
    prefs=p;
 }
 
-void configure_footlockers() {
+protected void configure_control_socket() {
+  string sock_path;
+  if(prefs->global && (sock_path = prefs->global->control_socket)) {
+    werror("creating control socket at %s.\n", sock_path);
+    control_socket = ControlSocket(sock_path, delegate(this));
+  }
+}
+
+protected void configure_footlockers() {
   foreach(glob("footlocker_*", indices(prefs));; string config_key) {
     write("Configuring footlocker from %s\n", config_key);
     mapping fl_config = prefs[config_key];
@@ -130,5 +141,21 @@ void configure_footlockers() {
       default:
         werror("unknown footlocker type " + fl_config->type + ". Not configuring.\n");
     }
+  }
+}
+  
+mapping status() {
+  mapping fls = ([]);
+  foreach(footlockers; string key; object fl) {
+    fls[key] = fl->status();
+  }
+    
+  return fls;
+}
+
+class delegate(object controller) {
+
+  mapping status() {
+    return controller->status();
   }
 }

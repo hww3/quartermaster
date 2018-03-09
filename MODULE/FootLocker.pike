@@ -8,6 +8,8 @@ protected ADT.Queue exists_queue = ADT.Queue();
 protected ADT.Queue change_queue = ADT.Queue();
 protected ADT.History history = ADT.History(25);
 
+protected Thread.Farm workers = Thread.Farm();
+
 protected int do_not_process = 0;
 protected int thread_running = 0;
 protected int should_quit = 1;
@@ -16,21 +18,85 @@ protected int repository_state;
 protected int processing_state;
 
 protected string dir;
+protected float commit_coalesce_period = 0.75;
+protected int stable_time = 2;
 
 protected Public.Protocols.XMPP.client xmpp_client;
+protected Thread.Thread process_thread;
+
+constant HISTORY_TYPE_INFO = 0;
+constant HISTORY_TYPE_ERROR = 1;
 
 constant REPOSITORY_STATE_CLEAN = 0;
-constant REPOSITORY_STATE_ERROR = 0;
+constant REPOSITORY_STATE_ERROR = 1;
 
 constant PROCESSING_STATE_IDLE = 0;
-constant PROCESSING_STATE_RECORDING = 0;
-constant PROCESSING_STATE_SENDING = 0;
-constant PROCESSING_STATE_RECEIVING = 0;
+constant PROCESSING_STATE_PENDING = 1;
+constant PROCESSING_STATE_RECORDING = 2;
+constant PROCESSING_STATE_SENDING = 3;
+constant PROCESSING_STATE_RECEIVING = 4;
+
+constant history_types = ([
+  HISTORY_TYPE_INFO: "INFO",
+  HISTORY_TYPE_ERROR: "ERROR"
+]);
+
+constant repository_states = ([ 
+  REPOSITORY_STATE_CLEAN : "CLEAN",
+  REPOSITORY_STATE_ERROR : "ERROR",
+]);
+
+constant processing_states = ([
+  PROCESSING_STATE_IDLE: "IDLE",
+  PROCESSING_STATE_PENDING: "PENDING",
+  PROCESSING_STATE_RECORDING: "RECORDING",
+  PROCESSING_STATE_SENDING: "SENDING",
+  PROCESSING_STATE_RECEIVING: "RECEIVING",
+]);
 
 protected void create(mapping config) {
   configuration = config;
   configuration->dir = Stdio.append_path(configuration->dir, "")[0..<1];
-  ::create(Filesystem.Monitor.basic.MF_RECURSE);
+
+  if(!configuration->dir)
+    werror("no directory specified in FootLocker configuration\n");
+  
+  if(has_index(configuration, "commit_coalesce_period")) {
+    commit_coalesce_period = (float)configuration->commit_coalesce_period;
+    werror("setting commit coalesce period to %f seconds.\n", commit_coalesce_period);
+  }
+  
+  if(has_index(configuration, "stable_time")) {
+    stable_time = (int)configuration->stable_time;
+    werror("setting stable time to %d seconds.\n", stable_time);
+  }
+  
+  workers->set_max_num_threads(4); // should be plenty for our purposes.
+  ::create(0,0,stable_time); 
+}
+
+protected void set_processing_state(int st) {
+  processing_state = st;
+}
+
+protected void set_repository_state(int st) {
+  repository_state = st;
+}
+
+protected string get_processing_state_name() {
+  return processing_states[processing_state];
+}
+
+protected string get_repository_state_name() {
+  return repository_states[repository_state];
+}
+
+protected void add_history(int history_type, string descr) {
+  history->push((["type": history_types[history_type], "time": time(), "message": descr]));
+}
+
+array(mapping) get_history() {
+  return values(history);
 }
 
 void setup() {
@@ -65,7 +131,7 @@ void xmpp_connected(object client) {
 
 void got_xmpp_msg(mapping message) {
   if(message->from == xmpp_client->jid) { 
-    werror("ignoring my own message.\n");
+//    werror("ignoring my own message.\n");
     return;
   }
   mixed msg = Standards.JSON.decode(message->body || "{}");
@@ -101,9 +167,10 @@ protected void run_process_thread()
 
 void start_processing_events(int|void dont_force) {
     if(dont_force &&  do_not_process) return; // if we have asked to not process events, do not override.
+    if(thread_running) return; // don't start multiple processing threads.
     do_not_process = 0;
     should_quit = 0;
-    Thread.Thread(run_process_thread);
+    process_thread = Thread.Thread(run_process_thread);
 }
 
 void stop_processing_events() {
@@ -179,4 +246,9 @@ void file_exists(string path, Stdio.Stat st)
    werror("file_exists(%O, %O)\n", path, st);
    exists_queue->write(({path, st}));
   if(!thread_running) start_processing_events(1);
+}
+
+mapping status() {
+  return (["repository_state": get_repository_state_name(), "processing_state": get_processing_state_name(),
+            "path": dir, "history": get_history()]);
 }
