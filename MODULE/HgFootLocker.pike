@@ -29,8 +29,12 @@ werror("verifying repository for %s\n", dir);
       Stdio.recursive_rm(get_dir("/.hg"));
       explain_hg_error(res);
     }
-    res = run_hg_command("update", "-t internal:local");
-    if(res->exitcode) {
+    res = run_hg_command("update");
+    if(res->exitcode == 1) {
+      res = run_hg_command("merge", "-t internal:local");
+    }
+    else if(res->exitcode == 0) { // success
+    } else {
       // if the update failed for some reason, return us to a repository-less situation.
       // we may possibly be left with a partial pull, but at least there will be no data loss.
       Stdio.recursive_rm(get_dir("/.hg"));
@@ -193,6 +197,10 @@ mapping push_changes() {
 
 mapping update_changes() {
   mapping res = run_hg_command("update", "--check -t internal:local");
+  if(res->exitcode == 1) {
+      res = run_hg_command("merge", "-t internal:local");
+  }
+
   return res;
 }
 
