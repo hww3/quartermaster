@@ -2,7 +2,7 @@ QuarterMaster is a tool for synchronizing datasets among computers. In concept
 it is similar to Dropbox or SparkleShare, but differs in one or more of the 
 following ways:
 
-- Supports multiple backend repository types, such as DVCS (mercurial currently)
+- Supports multiple backend repository types, such as DVCS (Mercurial currently)
 - Supports multiple synchronized folders (Foot Lockers)
 - Uses XMPP for synchronization messages
 - Does not require a UI and can run on Linux, Solaris, MacOSX and Windows
@@ -17,14 +17,14 @@ following ways:
 - Uses plain repositories, so you can operate directly on the repository 
     exclusive of QuarterMaster.
 
-Current drawbacks:
+Current drawbacks (aka the TODO list):
 
+ - Currently supports Mercurial backends only.
  - A repository setup script would be nice.
  - A tool for setting up new Foot Lockers on individual machines would be nice.
  - No GUI (though the configuration format is a simple INI style).
  - Error handling is somewhat immature and has not been tested in all possible
      failure scenarios.
-     
     
 Requirements:
 
@@ -36,3 +36,7 @@ Requirements:
     up and available
  - A XMPP (Jabber) account for use with QuarterMaster (multiple FootLockers may
     share a single account).
+    
+Usage:
+
+   pike -MMODULE quartermaster.pike --help
