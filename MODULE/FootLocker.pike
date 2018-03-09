@@ -23,6 +23,7 @@ protected int stable_time = 2;
 
 protected Public.Protocols.XMPP.client xmpp_client;
 protected Thread.Thread process_thread;
+protected object delegate; // control delegate
 
 constant HISTORY_TYPE_INFO = 0;
 constant HISTORY_TYPE_ERROR = 1;
@@ -54,7 +55,7 @@ constant processing_states = ([
   PROCESSING_STATE_RECEIVING: "RECEIVING",
 ]);
 
-protected void create(mapping config) {
+protected void create(mapping config, object control_delegate) {
   configuration = config;
   configuration->dir = Stdio.append_path(configuration->dir, "")[0..<1];
 
@@ -71,16 +72,24 @@ protected void create(mapping config) {
     werror("setting stable time to %d seconds.\n", stable_time);
   }
   
+  delegate = control_delegate;
+  
   workers->set_max_num_threads(4); // should be plenty for our purposes.
   ::create(0,0,stable_time); 
 }
 
 protected void set_processing_state(int st) {
+  int c = 0;
+  if(st != processing_state) c = 1;
   processing_state = st;
+  if(c) status_changed();
 }
 
 protected void set_repository_state(int st) {
+  int c = 0;
+  if(st != repository_state) c = 1;
   repository_state = st;
+  if(c) status_changed();
 }
 
 protected string get_processing_state_name() {
@@ -216,7 +225,6 @@ protected void process_entries() {
     should_quit = 1;
 }
 
-
 void data_changed(string path) {
   werror("data_changed(%O)\n", path);
 }
@@ -251,4 +259,8 @@ void file_exists(string path, Stdio.Stat st)
 mapping status() {
   return (["repository_state": get_repository_state_name(), "processing_state": get_processing_state_name(),
             "path": dir, "history": get_history()]);
+}
+
+void status_changed() {
+  delegate->status_changed(this, (["repository_state": get_repository_state_name(), "processing_state": get_processing_state_name(),]));
 }

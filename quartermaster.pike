@@ -121,7 +121,7 @@ protected void configure_control_socket() {
   string sock_path;
   if(prefs->global && (sock_path = prefs->global->control_socket)) {
     werror("creating control socket at %s.\n", sock_path);
-    control_socket = ControlSocket(sock_path, delegate(this));
+    control_socket = ControlSocket(sock_path, controlsocket_delegate(this));
   }
 }
 
@@ -133,7 +133,7 @@ protected void configure_footlockers() {
     switch(fl_config->type) {
       case "hg":
         write("creating footlocker for hg source.\n");
-        FootLocker fl = HgFootLocker(fl_config);
+        FootLocker fl = HgFootLocker(fl_config, footlocker_delegate(this));
         fl->setup();
         footlockers[config_key] = fl;
         fl->start_watch();
@@ -153,7 +153,20 @@ mapping status() {
   return fls;
 }
 
-class delegate(object controller) {
+void status_changed(object footlocker, mapping status) {
+  if(control_socket) {
+    string flname = search(footlockers, footlocker);
+    control_socket->status_changed(flname, status);
+  }
+}
+
+class footlocker_delegate(object controller) {
+  void status_changed(object footlocker, mapping status) {
+     controller->status_changed(footlocker, status);
+  }
+}
+
+class controlsocket_delegate(object controller) {
 
   mapping status() {
     return controller->status();

@@ -6,6 +6,10 @@ multiset remote_commands = (<"push", "pull", "incoming", "outgoing">);
 int commit_running = 0;
 int pull_needed = 0;
 
+// TODO
+//  we currently halt processing of local changes when doing push/pull/update. 
+//  we could lose individual changes happening during a long event, and it may
+//  be possible to continue doing commits while pushing/pulling. investigate!
 
 void verify_local_repository() {
 werror("verifying repository for %s\n", dir);
@@ -144,23 +148,24 @@ void do_run_commit() {
   array files_affected = (st->stdout/"\n");
   array files_to_ignore = ents - files_affected;
   ents = ents & files_affected;
-//  werror("ignoring %O\n", files_to_ignore);
+
   if(sizeof(ents)) {
     set_processing_state(PROCESSING_STATE_RECORDING);
 
     mapping resp = run_hg_command("commit", "-m 'QuarterMaster generated commit from " + gethostname() + ".\n\nFiles modified:\n\n" + 
                       sprintf("%{%s\n%}", ents) + "' " + sprintf("%{'%s' %}", ents));
-//    werror("resp: %O\n", resp);
     add_history(HISTORY_TYPE_INFO, "Recorded changes to "  + sizeof(ents) + " files.\n" + sprintf("%{%s\n%}", ents));
-    
-  set_processing_state(PROCESSING_STATE_IDLE);
+    set_processing_state(PROCESSING_STATE_IDLE);
 
-  if(resp->exitcode == 0) 
+    if(resp->exitcode == 0) {
       e = catch(pull_n_push_changes());
-	  } else if (pull_needed) {
-		  pull_needed = 0;
-		  e = catch(pull_n_push_changes());
-	  } 
+    }
+	} else if (pull_needed) {
+	    pull_needed = 0;
+	    e = catch(pull_n_push_changes());
+	} else {
+    set_processing_state(PROCESSING_STATE_IDLE);
+	}
 	  
   start_processing_events();
   commit_running = 0;

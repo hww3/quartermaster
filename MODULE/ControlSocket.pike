@@ -89,10 +89,16 @@ void socket_got_data(Standards.UUID.UUID uuid, Stdio.File fd, mapping data) {
   streaming_decode(data, command_received, uuid);
 }
 
+void status_changed(string flname, mapping status) {
+  foreach(conns; Standards.UUID.UUID uuid; Stdio.File fd) {
+    send_response((["event": "status_changed", "footlocker": flname, "data": status]), uuid);
+  }
+}
+
 mapping command_received(mapping cmd, Standards.UUID.UUID uuid) {
    werror("command received: %O\n", cmd);
    if(cmd->cmd && delegate[cmd->cmd])
-     send_response(delegate[cmd->cmd](cmd), uuid);
+     send_response(delegate[cmd->cmd](cmd) + (["event": cmd->cmd]), uuid);
    else send_response((["error": "invalid_command"]), uuid);
 }
 
@@ -105,7 +111,7 @@ void send_response(mapping result, Standards.UUID.UUID id) {
     return 0;
   }
   
-  string json = Standards.JSON.encode(result);
+  string json = Standards.JSON.encode(result + (["timestamp": time()]));
   
   werror("sending %s to socket %O\n", json, (string)id);
   socket_write(id, fd, json);
