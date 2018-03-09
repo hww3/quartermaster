@@ -30,19 +30,19 @@ constant PROCESSING_STATE_RECEIVING = 0;
 protected void create(mapping config) {
   configuration = config;
   configuration->dir = Stdio.append_path(configuration->dir, "")[0..<1];
-  dir = System.resolvepath(configuration->dir);
   ::create(Filesystem.Monitor.basic.MF_RECURSE);
 }
 
 void setup() {
 
   // first, create the directory if it doesn't exist.
-  if(!Stdio.exist(dir)) {
-    if(!mkdir(dir))
-      throw(Error.Generic("Unable to creeate footlocker directory " + dir));
-  } else if(!Stdio.is_dir(dir)) {
-    throw(Error.Generic("Footlocker directory " + dir + " exists but is not a folder.\n"));
+  if(!Stdio.exist(configuration->dir)) {
+    if(!mkdir(configuration->dir))
+      throw(Error.Generic("Unable to creeate footlocker directory " + configuration->dir));
+  } else if(!Stdio.is_dir(configuration->dir)) {
+    throw(Error.Generic("Footlocker directory " + configuration->dir + " exists but is not a folder.\n"));
   }
+  dir = System.resolvepath(configuration->dir);
 
   verify_local_repository();
   monitor(dir, Filesystem.Monitor.basic.MF_RECURSE);
