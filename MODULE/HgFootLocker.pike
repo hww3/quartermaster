@@ -22,14 +22,14 @@ werror("verifying repository for %s\n", dir);
     throw(Error.Generic("unable to determine state of footlocker repository: " + res->stderr + "\n"));
   }
   
-    res = run_hg_command("pull", "--rebase -t internal:local " + configuration->source);
+    res = run_hg_command("pull", " --rebase -t internal:local " + configuration->source);
     if(res->exitcode) {
       // if the pull failed for some reason, return us to a repository-less situation.
       // we may possibly be left with a partial pull, but at least there will be no data loss.
       Stdio.recursive_rm(get_dir("/.hg"));
       explain_hg_error(res);
     }
-    res = run_hg_command("update");
+    res = run_hg_command("update", "-t internal:local");
     if(res->exitcode) {
       // if the update failed for some reason, return us to a repository-less situation.
       // we may possibly be left with a partial pull, but at least there will be no data loss.
@@ -192,7 +192,7 @@ mapping push_changes() {
 }
 
 mapping update_changes() {
-  mapping res = run_hg_command("update", "--check");
+  mapping res = run_hg_command("update", "--check -t internal:local");
   return res;
 }
 
