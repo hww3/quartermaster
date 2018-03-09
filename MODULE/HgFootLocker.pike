@@ -22,7 +22,7 @@ werror("verifying repository for %s\n", dir);
     throw(Error.Generic("unable to determine state of footlocker repository: " + res->stderr + "\n"));
   }
   
-    res = run_hg_command("pull", " --rebase -t internal:local " + configuration->source);
+    res = run_hg_command("pull", " --rebase -t internal:merge-local " + configuration->source);
     if(res->exitcode) {
       // if the pull failed for some reason, return us to a repository-less situation.
       // we may possibly be left with a partial pull, but at least there will be no data loss.
@@ -31,7 +31,7 @@ werror("verifying repository for %s\n", dir);
     }
     res = run_hg_command("update");
     if(res->exitcode == 1) {
-      res = run_hg_command("merge", "-t internal:local");
+      res = run_hg_command("merge", "-t internal:merge-local");
     }
     else if(res->exitcode == 0) { // success
     } else {
@@ -143,8 +143,9 @@ void run_commit() {
 
 void pull_n_push_changes() {
   stop_processing_events();
-  mapping r = run_hg_command("incoming",  configuration->source);
-  if(r->exitcode == 0) {
+  mapping r;
+//  mapping r = run_hg_command("incoming",  configuration->source);
+//  if(r->exitcode == 0) {
     r = pull_changes();
     if(r->exitcode != 0) {
       catch(explain_hg_error(r));
@@ -153,12 +154,12 @@ void pull_n_push_changes() {
     if(r->exitcode != 0) {
       catch(explain_hg_error(r));
     }
-  } else if(r->exit_code > 1) {
-     catch(explain_hg_error(r));
-  } else {
+//  } else if(r->exit_code > 1) {
+//     catch(explain_hg_error(r));
+//  } else {
   
   r = push_changes();
-  }
+//  }
   
   // TODO we need to have better error handling here.
   start_processing_events();
@@ -172,8 +173,9 @@ void pull_n_push_changes() {
 
 void pull_incoming_changes() {
   stop_processing_events();
-  mapping r = run_hg_command("incoming",  configuration->source);
-  if(r->exitcode == 0) {
+  mapping r;
+//  mapping r = run_hg_command("incoming",  configuration->source);
+//  if(r->exitcode == 0) {
     r = pull_changes();
     if(r->exitcode != 0) {
       catch(explain_hg_error(r));
@@ -182,9 +184,9 @@ void pull_incoming_changes() {
     if(r->exitcode != 0) {
       catch(explain_hg_error(r));
     }
-  } else if(r->exit_code > 1) {
-     catch(explain_hg_error(r));
-  }
+//  } else if(r->exit_code > 1) {
+//     catch(explain_hg_error(r));
+//  }
   
   // TODO we need to have better error handling here.
   start_processing_events();
@@ -198,13 +200,13 @@ mapping push_changes() {
 mapping update_changes() {
   mapping res = run_hg_command("update", "--check");
   if(res->exitcode == 1) {
-      res = run_hg_command("merge", "-t internal:local");
+      res = run_hg_command("merge", "-t internal:merge-local");
   }
 
   return res;
 }
 
 mapping pull_changes() {
-   mapping res = run_hg_command("pull", "--rebase -t internal:local " + configuration->source);
+   mapping res = run_hg_command("pull", "--rebase -t internal:merge-local " + configuration->source);
    return res;
 }
