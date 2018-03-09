@@ -264,3 +264,18 @@ mapping status() {
 void status_changed() {
   delegate->status_changed(this, (["repository_state": get_repository_state_name(), "processing_state": get_processing_state_name(),]));
 }
+
+void shutdown() {
+  int i = 0;
+  stop_processing_events();
+  while(processing_state != PROCESSING_STATE_IDLE) {
+    if(!i)
+      werror("Processing state is %s, waiting up to 10 seconds.\n", get_processing_state_name());
+    sleep(1);
+    i++;
+    if(i > 9) {
+      werror("Processing state is %s, shutdown proceeding. This may result in inconsistent data.\n", get_processing_state_name());
+      break;
+    }
+  }
+}

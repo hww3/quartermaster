@@ -14,6 +14,7 @@ mapping config_defaults = ([
 string configfile;
 string logfile;
 mapping prefs;
+int shutting_down = 0;
 
 ControlSocket control_socket;
 
@@ -97,6 +98,8 @@ public int main(int argc, array(string) argv) {
   load_preferences();
   call_out(configure_control_socket, 1);
   call_out(configure_footlockers, 1);
+  
+  signal(signum("SIGINT"), shutdown);
   return -1;
 }
 
@@ -153,6 +156,29 @@ mapping status() {
   return fls;
 }
 
+mapping shutdown() {
+  if(shutting_down) {
+    werror("already shutting down\n");
+    return (["error": "SHUTDOWN_PENDING"]);
+  }
+
+  return do_shutdown();
+}
+
+mapping do_shutdown() {
+  shutting_down = 1;
+  
+  werror("shutdown requested\n");
+
+  foreach(footlockers; string key; object fl) {
+    werror("requesting shutdown of %s\n", key);
+    fl->shutdown();
+  }
+  
+  call_out(exit, 1.0, 0);
+  return (["result": "OK"]);
+}
+
 void status_changed(object footlocker, mapping status) {
   if(control_socket) {
     string flname = search(footlockers, footlocker);
@@ -170,5 +196,9 @@ class controlsocket_delegate(object controller) {
 
   mapping status() {
     return controller->status();
+  }
+  
+  mapping shutdown() {
+    return controller->shutdown();
   }
 }
