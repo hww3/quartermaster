@@ -1,0 +1,30 @@
+[global]
+# optional
+# where should we put the control socket?
+control_socket=/tmp/quartermaster.sock
+
+[footlocker_sample]
+
+# the location on disk we will be watching
+dir=/tmp/sample
+
+# the type of DVCS of the master repository (currently hg only)
+type=hg
+
+# the configuration for the xmpp signalling account. should be dedicated
+# to the use of Quartermaster, but may be shared by multiple footlockers
+xmpp_url=xmpp://user:password@myjabber.server
+
+# the url of the master repository, dependent on where you have it hosted, etc
+source=ssh://hg@bitbucket.org/myuser/repo
+
+# this should be the path to an ssh key authorized to access the source repository
+private_key=/home/myuser/.ssh/id_rsa_quartermaster
+
+# optional
+# seconds a change must be idle before being committed. default is 2
+#stable_time=2
+
+# optional
+# seconds we collect changes between a new change and a commit. default is 0.75
+#commit_coalesce_period=0.75
