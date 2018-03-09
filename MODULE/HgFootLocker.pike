@@ -17,29 +17,33 @@ werror("verifying repository for %s\n", dir);
       Stdio.recursive_rm(get_dir("/.hg"));
       explain_hg_error(res);
     }
+	
+	    res = run_hg_command("pull", " --rebase -t internal:merge-local " + configuration->source);
+	    if(res->exitcode) {
+	      // if the pull failed for some reason, return us to a repository-less situation.
+	      // we may possibly be left with a partial pull, but at least there will be no data loss.
+	      Stdio.recursive_rm(get_dir("/.hg"));
+	      explain_hg_error(res);
+	    }
+	    res = run_hg_command("update");
+	    if(res->exitcode == 1) {
+	      res = run_hg_command("merge", "-t internal:merge-local");
+	    }
+	    else if(res->exitcode == 0) { // success
+	    } else {
+	      // if the update failed for some reason, return us to a repository-less situation.
+	      // we may possibly be left with a partial pull, but at least there will be no data loss.
+	      Stdio.recursive_rm(get_dir("/.hg"));
+	      explain_hg_error(res);
+	    }
+	
   } else if(res->exitcode == 0) { // repository present
   } else {
     throw(Error.Generic("unable to determine state of footlocker repository: " + res->stderr + "\n"));
   }
-  
-    res = run_hg_command("pull", " --rebase -t internal:merge-local " + configuration->source);
-    if(res->exitcode) {
-      // if the pull failed for some reason, return us to a repository-less situation.
-      // we may possibly be left with a partial pull, but at least there will be no data loss.
-      Stdio.recursive_rm(get_dir("/.hg"));
-      explain_hg_error(res);
-    }
-    res = run_hg_command("update");
-    if(res->exitcode == 1) {
-      res = run_hg_command("merge", "-t internal:merge-local");
-    }
-    else if(res->exitcode == 0) { // success
-    } else {
-      // if the update failed for some reason, return us to a repository-less situation.
-      // we may possibly be left with a partial pull, but at least there will be no data loss.
-      Stdio.recursive_rm(get_dir("/.hg"));
-      explain_hg_error(res);
-    }
+ 
+/* we don't actually need to do this, as the watcher will cause a refresh of any added files, 
+   which will trigger a pull if there are any incoming changes. */ 
 
 werror("repository successfully verified for %s\n", dir);
 }
@@ -71,7 +75,7 @@ void add_new_file(string path, int|void advisory) {
 //werror("add_new_file(%O, %O)\n", path, advisory);
   if(path == dir) return;
   path = normalize_path(path);
-  mapping res = run_hg_command("add", path);
+  mapping res = run_hg_command("add", "'" + path + "'");
  // werror("res: %O\n", res->stderr);
   // TODO 
   if(!Stdio.is_dir(fpath) && !has_suffix(res->stderr, " already tracked!\n")) {
@@ -128,8 +132,13 @@ void run_commit() {
   werror("commit queue: %O\n", ents);
   commit_queue = ADT.Queue();
   mixed e;
-  
-  if(sizeof(entries)) {
+
+  mapping st = run_hg_command("status", "-m -a -r -d -n");
+  array files_affected = (st->stdout/"\n");
+  array files_to_ignore = ents - files_affected;
+  ents = ents & files_affected;
+  werror("ignoring %O\n", files_to_ignore);
+  if(sizeof(ents)) {
     mapping resp = run_hg_command("commit", "-m 'QuarterMaster generated commit from " + gethostname() + ".\n\nFiles modified:\n\n" + 
                       sprintf("%{%s\n%}", ents) + "' " + sprintf("%{'%s' %}", ents));
 //    werror("resp: %O\n", resp);
