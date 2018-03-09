@@ -22,7 +22,7 @@ werror("verifying repository for %s\n", dir);
     throw(Error.Generic("unable to determine state of footlocker repository: " + res->stderr + "\n"));
   }
   
-    res = run_hg_command("pull", "--rebase " + configuration->source);
+    res = run_hg_command("pull", "--rebase -t internal:local " + configuration->source);
     if(res->exitcode) {
       // if the pull failed for some reason, return us to a repository-less situation.
       // we may possibly be left with a partial pull, but at least there will be no data loss.
@@ -197,6 +197,6 @@ mapping update_changes() {
 }
 
 mapping pull_changes() {
-   mapping res = run_hg_command("pull", "--rebase " + configuration->source);
+   mapping res = run_hg_command("pull", "--rebase -t internal:local " + configuration->source);
    return res;
 }
