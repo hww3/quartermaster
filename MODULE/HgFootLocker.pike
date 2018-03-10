@@ -5,11 +5,6 @@ protected ADT.Queue add_queue = ADT.Queue();
 multiset remote_commands = (<"push", "pull", "incoming", "outgoing">);
 
 // TODO
-//  we currently halt processing of local changes when doing push/pull/update. 
-//  we could lose individual changes happening during a long event, and it may
-//  be possible to continue doing commits while pushing/pulling. investigate!
-
-// TODO
 // verify presense of hg and ssh
 
 void verify_local_repository() {
@@ -51,9 +46,6 @@ werror("verifying repository for %s\n", dir);
     throw(Error.Generic("unable to determine state of footlocker repository: " + res->stderr + "\n"));
   }
  
-/* we don't actually need to do this, as the watcher will cause a refresh of any added files, 
-   which will trigger a pull if there are any incoming changes. */ 
-
   werror("repository successfully verified for %s\n", dir);
 }
 
@@ -92,10 +84,7 @@ void do_run_commit(array ents) {
 	  add_queue = ADT.Queue();
 	  
 	  mapping res = run_hg_command("add", sprintf("%{'%s' %}", (array)aq));	
-  }
-  // werror("res: %O\n", res->stderr);
-  // TODO 
-  
+  }  
 
   mapping st = run_hg_command("status", "-m -a -r -d -n");
   array files_affected = (st->stdout/"\n");
