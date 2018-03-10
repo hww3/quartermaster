@@ -24,7 +24,7 @@ werror("verifying repository for %s\n", dir);
       Stdio.recursive_rm(get_dir("/.hg"));
       explain_hg_error(res);
     }
-    Stdio.write_file(get_dir("/.hg/hgrc"), "[extensions]\nrebase=\n\n[ui]\nusername=" + System.get_user() + " <" + System.get_user() + "@" + System.gethostname() + ">\n");	
+    Stdio.write_file(get_dir("/.hg/hgrc"), "[paths]\ndefault=" + configuration->source + "\n\n[extensions]\nrebase=\n\n[ui]\nusername=" + System.get_user() + " <" + System.get_user() + "@" + System.gethostname() + ">\n");	
 	    res = run_hg_command("pull", " --rebase -t internal:merge-local " + configuration->source);
 	    if(res->exitcode) {
 	      // if the pull failed for some reason, return us to a repository-less situation.
