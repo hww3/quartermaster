@@ -24,7 +24,7 @@ werror("verifying repository for %s\n", dir);
       Stdio.recursive_rm(get_dir("/.hg"));
       explain_hg_error(res);
     }
-	
+    Stdio.write_file(get_dir("/.hg/hgrc"), "[extensions]\nrebase=\n\n[ui]\nusername=" + System.get_user() + " <" + System.get_user() + "@" + System.gethostname() + ">\n");	
 	    res = run_hg_command("pull", " --rebase -t internal:merge-local " + configuration->source);
 	    if(res->exitcode) {
 	      // if the pull failed for some reason, return us to a repository-less situation.
@@ -65,7 +65,7 @@ void explain_hg_error(mapping res) {
 
 mapping run_hg_command(string command, string|void args) {
    string cmdstr = "hg " + command;
-   if(remote_commands[command]) cmdstr += " --ssh \"ssh -i '" + configuration->private_key + "'\""; 
+   if(remote_commands[command]) cmdstr += " --ssh \"ssh -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no -i '" + configuration->private_key + "'\""; 
    if(args)
      cmdstr += (" " + args);
    werror("-> running %s\n", cmdstr);
