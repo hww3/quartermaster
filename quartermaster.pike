@@ -77,17 +77,21 @@ public int main(int argc, array(string) argv) {
     }
     
     logfile = config->logfile;
-    mixed e = catch(Stdio.File(logfile, "cwa"));
-    if(e) {
-      werror("Unable to create log file: %s\n", Error.mkerror(e)->message());
-      return 2;
-    }
     
     configfile = config->configfile;
     if(!Stdio.is_file(configfile)) {
       werror("Error: config file %s does not exist\n", configfile);
       return 1;
     }
+
+	if(daemon_mode) {
+	    mixed e = catch(Stdio.File(logfile, "cwa"));
+	    if(e) {
+	      werror("Unable to create log file: %s\n", Error.mkerror(e)->message());
+	      return 2;
+	    }
+	
+	}
     
     write("Quartermaster %s starting\n", QUARTERMASTER_VERSION);
 
