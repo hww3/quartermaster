@@ -1,5 +1,7 @@
 inherit .FootLocker;
 
+protected ADT.Queue add_queue = ADT.Queue();
+
 multiset remote_commands = (<"push", "pull", "incoming", "outgoing">);
 
 // TODO
@@ -72,16 +74,9 @@ mapping run_hg_command(string command, string|void args) {
    return Process.run(cmdstr, (["cwd": dir])) + (["command": cmdstr]);
 }
 
-int do_add_file(string path, int|void advisory) {
-  mapping res = run_hg_command("add", "'" + path + "'");
-  // werror("res: %O\n", res->stderr);
-  // TODO 
-  if(!Stdio.is_dir(Stdio.append_path(dir, path)) && !has_suffix(res->stderr, " already tracked!\n")) {
-    werror("new file %O\n", path);
-    return 1;
-  } else {
-    return 0;
-  }
+int do_add_file(string path, int|void advisory) {	
+	add_queue->write(({path, advisory}));
+	return 1;
 }
 
 int do_remove_file(string path) {
@@ -91,6 +86,16 @@ int do_remove_file(string path) {
 
 void do_run_commit(array ents) {
   mixed e;
+
+  if(sizeof(add_queue)) {
+	  ADT.Queue aq = add_queue;
+	  add_queue = ADT.Queue();
+	  
+	  mapping res = run_hg_command("add", sprintf("%{'%s' %}", (array)aq));	
+  }
+  // werror("res: %O\n", res->stderr);
+  // TODO 
+  
 
   mapping st = run_hg_command("status", "-m -a -r -d -n");
   array files_affected = (st->stdout/"\n");
