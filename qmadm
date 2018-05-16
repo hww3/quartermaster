@@ -1,0 +1,339 @@
+#!/usr/bin/env bash
+
+# This program is free software. It comes without any warranty, to
+# the extent permitted by applicable law. You can redistribute it
+# and/or modify it under the terms of the Do What The Fuck You Want
+# To Public License, Version 2, as published by Sam Hocevar. See
+# http://sam.zoy.org/wtfpl/COPYING for more details.
+
+#added to enable external user definition
+case $2 in
+        -u|--user)
+        MYUSER=$3
+        ;;
+esac
+
+case $3 in #added to catch the user name for the create sub-command
+      -u|--user)
+        MYUSER=$4
+        ;;
+esac
+
+# Check if we're root, if not show a warning
+if [[ $UID -ne 0 ]]; then
+  case $1 in
+    ""|help) # You should be allowed to check the help without being root
+      ;;
+    *)
+      echo "Sorry, but qmadm needs to be run as root."
+      exit 1
+      ;;
+  esac
+fi
+
+HG=$( which hg ) || HG=""
+
+# Define text styles
+BOLD=$( tput bold )
+NORMAL=$( tput sgr0 )
+
+# Nice defaults
+QM_USER="${QM_USER:-$MYUSER}"
+QM_GROUP="${QM_GROUP:-$QM_USER}"
+QM_HOME="${QM_HOME:-/home/$QM_USER}"
+
+show_help () {
+    echo "${BOLD}qmadm, the Quartermaster host setup script${NORMAL}"
+    echo "This script needs to be run as root"
+    echo
+    echo "Usage: $0 [COMMAND]"
+    echo
+    echo "  setup                             configures this machine to serve as a Quartermaster host"
+    echo "  create FOOTLOCKER_AME             creates a Quartermaster Footlocker called FOOTLOCKER_NAME"
+    echo "  link FOOTLOCKER_NAME              links a  client to a Footlocker on this host by entering a link code"
+    echo "  -u|--user USERNAME                MUST specify a username at the end of the command"
+    echo
+}
+
+create_account () {
+  STORAGE=$( grep "^$QM_GROUP:" /etc/passwd | cut -d : -f 1 )
+
+  # Create user
+  if [ "$STORAGE" = "$QM_USER" ]; then
+    echo "  -> Account already exists."
+  else
+    STORAGE=$( grep "^$QM_GROUP:" /etc/group | cut -d : -f 1 )
+    HG_SHELL="/bin/sh"
+
+    if [ -z "$STORAGE" ] ; then
+      groupadd $QM_GROUP
+    fi
+    echo "  -> useradd $QM_USER --create-home --home $QM_HOME --system --shell $HG_SHELL --password \"*\" --user-group"
+    useradd -m -d $QM_HOME -s $HG_SHELL -g $QM_GROUP $QM_USER
+  fi
+
+  # Create base directory
+  if [ ! -d "$QM_HOME" ]; then
+    echo "  -> mkdir --parents $QM_HOME"
+    mkdir -p "$QM_HOME"
+  fi
+
+  sleep 0.5
+}
+
+configure_ssh () {
+   HGS=$(which hg-ssh) || HGS=""
+    if [ -z $HGS ] ; then
+       HG_SSH_URL="https://www.selenic.com/repo/hg-stable/raw-file/b9f7b0c10027/contrib/hg-ssh"
+       echo " -> installing hg-ssh from $HG_SSH_URL"
+       CURL=$(which curl) || CURL=""
+       WGET=$(which wget) || WGET=""
+       if [ -n $CURL ] ; then
+         curl -s -o "$QM_HOME/hg-ssh" $HG_SSH_URL
+       elif [ -n $WGET ] ; then
+         wget -q -O "$QM_HOME/hg-ssh" $HG_SSH_URL
+       else
+         echo "Unable to find curl or wget."
+       fi
+       if [ -f "$QM_HOME/hg-ssh" ] ; then
+         chown $QM_USER "$QM_HOME/hg-ssh"
+         chmod a+rx "$QM_HOME/hg-ssh"
+       else
+         echo "unable to install hg-ssh to $QM_HOME. things will not work properly until this has been resolved."
+       fi
+    else 
+      echo " -> using system hg-ssh at $HGS"
+    fi
+
+  echo "  -> mkdir --parents $QM_HOME/.ssh"
+  mkdir -p "$QM_HOME/.ssh"
+
+  echo "  -> touch $QM_HOME/.ssh/authorized_keys"
+  touch "$QM_HOME/.ssh/authorized_keys"
+
+  echo "  -> chmod 700 $QM_HOME/.ssh"
+  chmod 700 "$QM_HOME/.ssh"
+
+  echo "  -> chmod 600 $QM_HOME/.ssh/authorized_keys"
+  chmod 600 "$QM_HOME/.ssh/authorized_keys"
+
+  # Disable the password for the "storage" user to force authentication using a key
+  CONFIG_CHECK=$( grep "^# Quartermaster ${QM_USER}$" /etc/ssh/sshd_config )
+  if ! [ "$CONFIG_CHECK" = "# Quartermaster ${QM_USER}" ]; then
+      {
+          echo ""
+          echo "# Quartermaster ${QM_USER}"
+          echo "# Please do not edit the above comment as it's used as a check by qmadm"
+          echo "Match User $QM_USER"
+          echo "    PasswordAuthentication no"
+          echo "    PubkeyAuthentication yes"
+          echo "# End of Quartermaster configuration"
+      } >> /etc/ssh/sshd_config
+  fi
+
+  sleep 0.5
+}
+
+reload_ssh_config () {
+  if [ -f "/etc/init.d/sshd" ]; then
+    echo "  -> /etc/init.d/sshd reload"
+    /etc/init.d/sshd reload >/dev/null
+
+  elif [ -f "/etc/rc.d/sshd" ]; then
+    echo "  -> /etc/rc.d/sshd reload"
+    /etc/rc.d/sshd reload >/dev/null
+  elif [ -x "/usr/sbin/svcadm" ] ; then
+    echo " -> /usr/sbin/svcadm restart ssh"
+    /usr/sbin/svcadm restart ssh
+  else
+    echo "  -> /etc/init.d/ssh reload"
+    /etc/init.d/ssh reload >/dev/null
+  fi
+}
+
+install_hg () {
+  if [ -n "$HG" ]; then
+    HG_VERSION=$( $HG  --version | head -1 | awk -F '(' '{print $2}' | awk -F ')' '{print $1}' )
+    echo "  -> The Mercurial package has already been installed version $HG_VERSION."
+  else
+    PKGIN=$(which pkgin) || PKGIN=""
+
+    if [ -n "${PKGIN}" ]; then
+      echo " -> pkgin -y install mercurial"
+      pkgin -y install mercurial
+    elif [ -f "/usr/bin/yum" ]; then
+      echo "  -> yum --assumeyes install hg"
+      yum -y --quiet install hg
+
+    elif [ -f "/usr/bin/apt-get" ]; then
+      echo "  -> apt-get --yes install hg"
+
+      if apt-get --yes --quiet install hg; then
+        echo "  -> apt-get --yes install hg-core"
+        apt-get --yes --quiet install hg-core
+      fi
+
+    elif [ -f "/usr/bin/zypper" ]; then
+      echo "  -> zypper --yes install hg-core"
+      zypper --yes --quiet install hg-core
+
+    elif [ -f "/usr/bin/emerge" ]; then
+      echo "  -> emerge dev-vcs/hg"
+      emerge --quiet dev-vcs/hg
+
+    elif [ -f "/usr/bin/pacman" ]; then
+      echo "  -> pacman -S hg"
+      pacman -S hg
+    else
+      echo "${BOLD}Could not install Mercurial... Please install it manually before continuing.{$NORMAL}"
+      echo
+      exit 1
+    fi
+  fi
+}
+
+create_footlocker () {
+  if [ -f "$QM_HOME/$1/.hg" ]; then
+    echo "  -> Project \"$1\" already exists."
+    echo
+  else
+    # Create the Mercurial repository
+    echo "  -> $HG init $QM_HOME/$1"
+    $HG init --quiet "$QM_HOME/$1"
+
+    # Don't allow force-pushing and data to get lost
+    #echo "  -> $HG config --file $QM_HOME/$1/config receive.denyNonFastForwards true"
+    #$HG config --file "$QM_HOME/$1/config" receive.denyNonFastForwards true
+
+    # Add list of files that Mercurial should not compress
+    #EXTENSIONS="jpg jpeg png tiff gif psd xcf flac mp3 ogg oga avi mov mpg mpeg mkv ogv ogx webm zip gz bz xz bz2 rpm deb tgz rar ace 7z pak msi iso dmg"
+    EXTENSIONS=""
+    for EXTENSION in $EXTENSIONS; do
+      sleep 0.05
+      echo -ne "  -> echo \"*.$EXTENSION -delta\" >> $QM_HOME/$1/info/attributes      \r"
+      echo "*.$EXTENSION -delta" >> "$QM_HOME/$1/info/attributes"
+      sleep 0.05
+      EXTENSION_UPPERCASE=$( echo "$EXTENSION" | tr '[:lower:]' '[:upper:]' )
+      echo -ne "  -> echo \"*.$EXTENSION_UPPERCASE -delta\" >> $QM_HOME/$1/info/attributes      \r"
+      echo "*.$EXTENSION_UPPERCASE -delta" >> "$QM_HOME/$1/info/attributes"
+    done
+
+    echo ""
+
+    # Set the right permissions
+    echo "  -> chown --recursive $QM_USER:$QM_GROUP $QM_HOME"
+    chown -R "$QM_USER:$QM_GROUP" "$QM_HOME"
+
+    echo "  -> chmod --recursive o-rwx $QM_HOME/$1"
+    chmod -R o-rwx "$QM_HOME"/"$1"
+
+    sleep 0.5
+
+    echo
+    echo "${BOLD}Project \"$1\" was successfully created.${NORMAL}"
+  fi
+
+  # Fetch the external IP address
+  # 1. fetch all inet addresses (IPv4)
+  # 2. select only global scope addresses
+  # 3. extract the address
+  # 4. limit the list to the first address to get only one IP in case the server has more than one
+  IPCMD=$(which ip) || IPCMD=""
+  IFCONFIG=$(which ifconfig) || IFCONFIG=""
+
+  if [ -n "$IPCMD" ] ; then
+    IP=$( ip -f inet addr |grep "inet .* scope global" | grep -Po "inet ([\d+\.]+)" | cut -c 6- | head -n1 )
+  elif [ -n "$IFCONFIG" ] ; then
+    IP=$( ifconfig -a inet | grep inet | sed -e 's/[[:blank:]]*inet //' | cut -f 1 -d ' ' | tail -1)
+  else
+    echo "Unable to find either ip or ifconfig; unable to determine host address."
+  fi
+  PORT=$( grep --max-count=1 "^Port " /etc/ssh/sshd_config | cut -b 6- )
+
+  # Display info to link with the created footlocker to the user
+  echo "To link up a Quartermaster client, enter the following"
+  echo "details into the ${BOLD}\"Add Hosted Project...\"${NORMAL} dialog: "
+  echo
+  echo "      Address: ${BOLD}ssh://$QM_USER@$IP:$PORT${NORMAL}"
+  echo "  Remote Path: ${BOLD}$QM_HOME/$1${NORMAL}"
+  echo
+  echo "To link up more computers, use the \"dazzle link\" command."
+  echo
+}
+
+link_client () {
+  # Ask the user for the link code with a prompt
+  echo "Paste your Client ID found in the status icon menu below and press ${BOLD}<ENTER>${NORMAL}."
+  echo
+  echo -n " ${BOLD}Client ID: ${NORMAL}"
+  read -r LINK_CODE
+
+  PATH=$PATH:$QM_HOME
+  export PATH 
+  HGS=$(which hg-ssh) || HGS=""
+  if [ -z "$HGS" ] ; then
+    echo "No hg-ssh found. Unable to continue."
+    exit 1
+  fi
+
+  if [ -z "$1" ] ; then
+    echo "No footlocker specified. Unable to continue."
+    exit 1
+  fi
+
+  echo "command='$HGS $QM_HOME/$1',no-port-forwarding,no-x11-forwarding,no-agent-forwarding $LINK_CODE" >> "$QM_HOME/.ssh/authorized_keys"
+  echo
+  echo "${BOLD}The client with this ID can now access footlocker $1.${NORMAL}"
+  echo "Repeat this step to give access to more clients."
+  echo
+}
+
+validate_input() 
+{
+# validate values
+if [ -z "${QM_USER}" ] ; then
+  echo "User not specified. Unable to continue."
+  exit 1
+fi
+
+}
+
+
+# Parse the command line arguments
+case $1 in
+  setup)
+    validate_input
+    echo "${BOLD} 1/4 | Installing the Mercurial package...${NORMAL}"
+    install_hg
+    echo "${BOLD} 2/4 | Creating account \"$QM_USER\"...${NORMAL}"
+    create_account
+    echo "${BOLD} 3/4 | Configuring account \"$QM_USER\"...${NORMAL}"
+    configure_ssh
+    echo "${BOLD} 4/4 | Reloading the SSH config...${NORMAL}"
+    reload_ssh_config
+    echo
+    echo "${BOLD}Setup complete!${NORMAL}"
+    echo "To create a new footlockers, run \"$0 create FOOTLOCKER_NAME\"."
+    echo
+    ;;
+
+  create)
+    validate_input
+    if [ -n "$2" ]; then
+      echo "${BOLD}Creating footlocker \"$2\"...${NORMAL}"
+      create_footlocker "$2"
+
+    else
+      echo "Please provide a footlocker name."
+    fi
+    ;;
+
+  link)
+    validate_input
+    link_client "$2"
+    ;;
+
+  *|help)
+    show_help
+    ;;
+esac
