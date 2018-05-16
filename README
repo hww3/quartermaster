@@ -39,4 +39,6 @@ Requirements:
     
 Usage:
 
+   ssh-keygen -t rsa -f $HOME/.ssh/id_rsa_quartermasterssh-keygen -t rsa -f $HOME/.ssh/id_rsa_quartermaster
+
    pike -MMODULE quartermaster.pike --help

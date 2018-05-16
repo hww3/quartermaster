@@ -70,6 +70,8 @@ create_account () {
     fi
     echo "  -> useradd $QM_USER --create-home --home $QM_HOME --system --shell $HG_SHELL --password \"*\" --user-group"
     useradd -m -d $QM_HOME -s $HG_SHELL -g $QM_GROUP $QM_USER
+    # set the password field to "NP", allowing login on SunOS
+    passwd -N $QM_USER > /dev/null
   fi
 
   # Create base directory
@@ -281,7 +283,7 @@ link_client () {
     exit 1
   fi
 
-  echo "command='$HGS $QM_HOME/$1',no-port-forwarding,no-x11-forwarding,no-agent-forwarding $LINK_CODE" >> "$QM_HOME/.ssh/authorized_keys"
+  echo "command=\"$HGS $QM_HOME/$1\",no-port-forwarding,no-x11-forwarding,no-agent-forwarding $LINK_CODE" >> "$QM_HOME/.ssh/authorized_keys"
   echo
   echo "${BOLD}The client with this ID can now access footlocker $1.${NORMAL}"
   echo "Repeat this step to give access to more clients."
