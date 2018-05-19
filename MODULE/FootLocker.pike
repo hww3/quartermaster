@@ -208,7 +208,7 @@ protected void changes_pushed() {
 }
 
 void start_watch() {
-//  set_nonblocking(2);
+  set_nonblocking(2);
 }
 
 protected string get_dir(string subdir) {
