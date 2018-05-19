@@ -23,6 +23,8 @@ protected int stable_time = 2;
 
 protected Public.Protocols.XMPP.client xmpp_client;
 protected Thread.Thread process_thread;
+protected mixed push_notice_callout;
+
 protected object delegate; // control delegate
 
 constant HISTORY_TYPE_INFO = 0;
@@ -203,7 +205,11 @@ void got_xmpp_msg(mapping message) {
 }
 
 protected void changes_pushed() {
-
+  if(push_notice_callout) {
+	  remove_call_out(push_notice_callout);
+	  push_notice_callout = 0;
+  }
+  if(!xmpp_client || !xmpp_client->negotiation_complete) push_notice_callout = call_out(changes_pushed, 5);
   xmpp_client->send_message(Standards.JSON.encode((["event": "changes_pushed", "source": configuration->source])), "", xmpp_client->user + "@" + xmpp_client->server);
 }
 

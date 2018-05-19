@@ -42,6 +42,10 @@ werror("verifying repository for %s\n", dir);
 	    }
 	
   } else if(res->exitcode == 0) { // repository present
+	  res = run_hg_command("outgoing " + configuration->source);
+	  if(res->exitcode == 0) {
+	    pull_n_push_changes();
+	  }
   } else {
     throw(Error.Generic("unable to determine state of footlocker repository: " + res->stderr + "\n"));
   }
@@ -62,7 +66,7 @@ mapping run_hg_command(string command, string|void args) {
    if(remote_commands[command]) cmdstr += " --ssh \"ssh -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no -i '" + configuration->private_key + "'\""; 
    if(args)
      cmdstr += (" " + args);
-   werror("-> running %s\n", cmdstr);
+   werror("%s -> running %s\n", dir, cmdstr);
    return Process.run(cmdstr, (["cwd": dir])) + (["command": cmdstr]);
 }
 

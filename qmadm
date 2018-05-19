@@ -258,6 +258,10 @@ create_footlocker () {
   echo
   echo "      Address: ${BOLD}ssh://$QM_USER@$IP:$PORT${NORMAL}"
   echo "  Remote Path: ${BOLD}$QM_HOME/$1${NORMAL}"
+  echo 
+  echo "Alternately, you may add the following to your quartermaster.conf file: "
+  echo
+  echo "source=ssh://$QM_USER@$IP:$PORT/$QM_HOME/$1
   echo
   echo "To link up more computers, use the \"dazzle link\" command."
   echo
