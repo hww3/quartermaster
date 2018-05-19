@@ -86,7 +86,7 @@ create_account () {
 configure_ssh () {
    HGS=$(which hg-ssh) || HGS=""
     if [ -z $HGS ] ; then
-       HG_SSH_URL="https://www.selenic.com/repo/hg-stable/raw-file/b9f7b0c10027/contrib/hg-ssh"
+       HG_SSH_URL="https://www.mercurial-scm.org/repo/hg/raw-file/dc1ed7fe33e4/contrib/hg-ssh"
        echo " -> installing hg-ssh from $HG_SSH_URL"
        CURL=$(which curl) || CURL=""
        WGET=$(which wget) || WGET=""
